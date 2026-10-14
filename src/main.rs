@@ -1,14 +1,17 @@
 use anyhow::{Error, Result};
 
 fn main() {
-    set1_chal1();
+    set1::chal1();
 }
+mod set1 {
+    use super::*;
 
-fn set1_chal1() {
-    const SOURCE: &str = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d";
-    const EXPECTED: &str = "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t";
-    let bla = hex_to_base64(SOURCE).unwrap();
-    assert_eq!(bla, EXPECTED);
+    pub fn chal1() {
+        const SOURCE: &str = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d";
+        const EXPECTED: &str = "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t";
+        let bla = hex_to_base64(SOURCE).unwrap();
+        assert_eq!(bla, EXPECTED);
+    }
 }
 
 fn hex_to_base64(s: &str) -> Result<String> {
