@@ -2,6 +2,7 @@ use anyhow::{Error, Result};
 
 fn main() {
     set1::chal1();
+    set1::chal2();
 }
 mod set1 {
     use super::*;
@@ -12,6 +13,44 @@ mod set1 {
         let bla = hex_to_base64(SOURCE).unwrap();
         assert_eq!(bla, EXPECTED);
     }
+
+    pub fn chal2() {
+        let source = "1c0111001f010100061a024b53535009181c";
+        let xorge = "686974207468652062756c6c277320657965";
+        let expected = "746865206b696420646f6e277420706c6179";
+
+        let bla = hex_xor(source, xorge).unwrap();
+        assert_eq!(bla, expected);
+        let back_again = hex_xor(&bla, xorge).unwrap();
+        assert_eq!(back_again, source);
+    }
+}
+
+fn hex_xor(a: &str, b: &str) -> Result<String> {
+    if a.len() != b.len() {
+        return Err(Error::msg(
+            "I don't have a reasonable way to xor hex strings of different length",
+        ));
+    }
+
+    // I mean, what's the worst that could happen? xdd
+    /*
+    let v: Vec<u8> = a
+        .as_bytes()
+        .iter()
+        .copied()
+        .zip(b.as_bytes().iter().copied())
+        .map(|(a, b)| a ^ b)
+        .collect();
+    */
+    let v: Result<Vec<u8>> = a
+        .as_bytes()
+        .iter()
+        .copied()
+        .zip(b.as_bytes().iter().copied())
+        .map(|(a, b)| Ok(byte_to_hex(hex_to_byte(a)? ^ hex_to_byte(b)?)))
+        .collect();
+    Ok(String::from_utf8(v?)?)
 }
 
 fn hex_to_base64(s: &str) -> Result<String> {
@@ -49,6 +88,21 @@ fn hex_to_base64(s: &str) -> Result<String> {
         _ => unreachable!(),
     }
     Ok(String::from_utf8(v)?)
+}
+
+/// Transform raw 4-bits value to hex.
+///
+/// If more than 4 bits are used, panics in debug mode or silently truncates to 4 bits in release.
+///
+/// # Panic
+///
+/// Panics in debug mode if `byte > 15`.
+fn byte_to_hex(byte: u8) -> u8 {
+    debug_assert!(byte <= 15);
+    match byte & 0b1111 {
+        0..=9 => byte + b'0',
+        _ => byte - 10 + b'a',
+    }
 }
 
 fn hex_to_byte(hex: u8) -> Result<u8> {
