@@ -6,6 +6,7 @@ fn main() {
     set1::chal2();
     set1::chal3();
     set1::chal4();
+    set1::chal5();
 }
 
 mod set1 {
@@ -112,6 +113,25 @@ mod set1 {
             )]
         );
     }
+
+    pub fn chal5() {
+        let text = "Burning 'em, if you ain't quick and nimble\n\
+                    I go crazy when I hear a cymbal";
+        let expected = "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272\
+                        a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f";
+
+        let mut bytes = text.as_bytes().to_vec();
+        encrypt_with_key(&mut bytes, "ICE".as_bytes());
+        let hex = HexString::from_bytes(&bytes);
+        assert_eq!(hex.0, expected);
+    }
+}
+
+fn encrypt_with_key(msg: &mut [u8], key: &[u8]) {
+    msg.iter_mut()
+        .zip(key.iter().cycle())
+        .for_each(|(msg_byte, &key_byte)| *msg_byte ^= key_byte);
+}
 
 /// Returns `(inverse_score, decrypted_string, xor_byte)`
 fn decrypt_for_every_byte(bytes: &[u8]) -> impl Iterator<Item = (usize, String, u8)> {
