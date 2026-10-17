@@ -1,17 +1,21 @@
-use anyhow::{Error, Result};
+use anyhow::{Result, bail};
+use strings::{Base64String, HexString};
 
 fn main() {
     set1::chal1();
     set1::chal2();
 }
+
 mod set1 {
     use super::*;
 
     pub fn chal1() {
         const SOURCE: &str = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d";
         const EXPECTED: &str = "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t";
-        let bla = hex_to_base64(SOURCE).unwrap();
-        assert_eq!(bla, EXPECTED);
+        let hex = HexString::new(SOURCE.into()).unwrap();
+        let bytes = hex.to_bytes();
+        let base64 = strings::Base64String::from_bytes(&bytes);
+        assert_eq!(base64.0, EXPECTED);
     }
 
     pub fn chal2() {
@@ -19,120 +23,158 @@ mod set1 {
         let xorge = "686974207468652062756c6c277320657965";
         let expected = "746865206b696420646f6e277420706c6179";
 
-        let bla = hex_xor(source, xorge).unwrap();
+        let bla = hex_xor(source.into(), xorge.into()).unwrap();
         assert_eq!(bla, expected);
-        let back_again = hex_xor(&bla, xorge).unwrap();
+        let back_again = hex_xor(bla, xorge.into()).unwrap();
         assert_eq!(back_again, source);
     }
 }
 
-fn hex_xor(a: &str, b: &str) -> Result<String> {
+fn hex_xor(a: String, b: String) -> Result<String> {
     if a.len() != b.len() {
-        return Err(Error::msg(
-            "I don't have a reasonable way to xor hex strings of different length",
-        ));
+        bail!("I don't have a reasonable way to xor hex strings of different length");
     }
 
-    // I mean, what's the worst that could happen? xdd
-    /*
-    let v: Vec<u8> = a
-        .as_bytes()
-        .iter()
-        .copied()
-        .zip(b.as_bytes().iter().copied())
-        .map(|(a, b)| a ^ b)
-        .collect();
-    */
-    let v: Result<Vec<u8>> = a
-        .as_bytes()
-        .iter()
-        .copied()
-        .zip(b.as_bytes().iter().copied())
-        .map(|(a, b)| Ok(byte_to_hex(hex_to_byte(a)? ^ hex_to_byte(b)?)))
-        .collect();
-    Ok(String::from_utf8(v?)?)
+    let mut a_bytes = HexString::new(a)?.to_bytes();
+    let b_bytes = HexString::new(b)?.to_bytes();
+
+    a_bytes
+        .iter_mut()
+        .zip(b_bytes.iter())
+        .for_each(|(a, &b)| *a ^= b);
+
+    Ok(HexString::from_bytes(&a_bytes).0)
 }
 
-fn hex_to_base64(s: &str) -> Result<String> {
-    // hex -> 4 bits
-    // base64 -> 6 bits
-    // 3 hexes -> 2 base64
-    // 2 hexes -> byte
-    // 3 bytes -> 4 base64
-    let (chunks, paddedge) = s.as_bytes().as_chunks::<3>();
-    let v: Result<Vec<u8>> =
-        chunks
-            .iter()
-            .try_fold(Vec::new(), |mut res, chunk| -> Result<_, Error> {
-                let &[a, b, c] = chunk;
-                let (a, b) = three_hex_to_two_base64(a, b, c)?;
-                res.push(a);
-                res.push(b);
-                Ok(res)
+mod strings {
+    use super::Result;
+    use anyhow::bail;
+
+    pub struct HexString(pub String);
+
+    impl HexString {
+        pub fn new(s: String) -> Result<Self> {
+            if s.len().is_multiple_of(2) && s.as_bytes().iter().copied().all(char_is_hex) {
+                Ok(Self(s))
+            } else {
+                bail!("It is not a hex string: {s}")
+            }
+        }
+
+        pub fn to_bytes(&self) -> Vec<u8> {
+            let (chunks, pad) = self.0.as_bytes().as_chunks::<2>();
+            assert!(pad.is_empty(), "should be multiple of 2 on creation");
+            chunks
+                .iter()
+                .map(|chunk| {
+                    let &[a, b] = chunk;
+                    let a = hex_to_byte(a);
+                    let b = hex_to_byte(b);
+                    a << 4 | b
+                })
+                .collect()
+        }
+
+        pub fn from_bytes(bytes: &[u8]) -> Self {
+            let mut vec = Vec::with_capacity(bytes.len() * 2);
+            bytes.iter().for_each(|&byte| {
+                vec.push(map_to_hex(byte >> 4));
+                vec.push(map_to_hex(byte & 0b1111));
             });
-    let mut v = v?;
-    match paddedge {
-        [] => (),
-        &[a, b] => {
-            let (a, b) = three_hex_to_two_base64(a, b, 0)?;
-            v.push(a);
-            v.push(b);
-            v.push(b'=');
-            v.push(b'=');
+            let s = String::from_utf8(vec).expect("hex chars are valid UTF-8");
+            Self(s)
         }
-        [_] => {
-            return Err(Error::msg(
-                "the hell am I supposed to do with half a byte at the end of the string?",
-            ));
+    }
+
+    fn hex_to_byte(hex: u8) -> u8 {
+        match hex {
+            b'0'..=b'9' => hex - b'0',
+            b'A'..=b'F' => hex - b'A' + 10,
+            // b'a'..=b'f' => hex - b'a' + 10,
+            _ => hex - b'a' + 10,
         }
-        _ => unreachable!(),
     }
-    Ok(String::from_utf8(v)?)
-}
 
-/// Transform raw 4-bits value to hex.
-///
-/// If more than 4 bits are used, panics in debug mode or silently truncates to 4 bits in release.
-///
-/// # Panic
-///
-/// Panics in debug mode if `byte > 15`.
-fn byte_to_hex(byte: u8) -> u8 {
-    debug_assert!(byte <= 15);
-    match byte & 0b1111 {
-        0..=9 => byte + b'0',
-        _ => byte - 10 + b'a',
+    fn char_is_hex(cha: u8) -> bool {
+        cha.is_ascii_hexdigit()
     }
-}
 
-fn hex_to_byte(hex: u8) -> Result<u8> {
-    match hex {
-        b'0'..=b'9' => Ok(hex - b'0'),
-        b'A'..=b'F' => Ok(hex - b'A' + 10),
-        b'a'..=b'f' => Ok(hex - b'a' + 10),
-        _ => Err(Error::msg("outside of hex range")),
+    fn map_to_hex(byte: u8) -> u8 {
+        match byte {
+            0..=9 => b'0' + byte,
+            10..=15 => byte - 10 + b'a',
+            _ => unreachable!("{byte}"),
+        }
     }
-}
 
-fn byte_to_base64(byte: u8) -> Result<u8> {
-    match byte {
-        0..=25 => Ok(byte + b'A'),
-        26..=51 => Ok(byte - 26 + b'a'),
-        52..=61 => Ok(byte - 52 + b'0'),
-        // This is http-safe base64;
-        // for original use `62 => Ok(b'+'), 63 => Ok(b'/'),`
-        62 => Ok(b'-'),
-        63 => Ok(b'_'),
-        _ => Err(Error::msg("outside of base64 range")),
+    pub struct Base64String(pub String);
+
+    impl Base64String {
+        pub fn new(s: String) -> Result<Self> {
+            if s.len().is_multiple_of(4) && s.as_bytes().iter().copied().all(char_is_base64) {
+                Ok(Self(s))
+            } else {
+                bail!("It is not a base64 string: {s}")
+            }
+        }
+
+        pub fn to_bytes(&self) -> Vec<u8> {
+            todo!()
+        }
+
+        pub fn from_bytes(bytes: &[u8]) -> Self {
+            // base64 -> 6 bits
+            // 3 bytes -> 4 base64
+            let (chunks, paddedge) = bytes.as_chunks::<3>();
+            let mut vec = Vec::with_capacity(bytes.len() * 2);
+            chunks.iter().for_each(|chunk| {
+                let &[ca, cb, cc] = chunk;
+                let a = ca >> 2;
+                let b = ((ca & 0b11) << 4) | (cb >> 4);
+                let c = ((cb & 0b1111) << 2) | (cc >> 6);
+                let d = cc & 0b11_1111;
+
+                vec.push(map_to_base64(a));
+                vec.push(map_to_base64(b));
+                vec.push(map_to_base64(c));
+                vec.push(map_to_base64(d));
+            });
+
+            match *paddedge {
+                [a] => {
+                    vec.push(map_to_base64(a >> 2));
+                    vec.push(map_to_base64((a & 0b11) << 4));
+                    vec.push(b'=');
+                    vec.push(b'=');
+                }
+                [a, b] => {
+                    vec.push(map_to_base64(a >> 2));
+                    vec.push(map_to_base64(((a & 0b11) << 4) | (b >> 4)));
+                    vec.push(map_to_base64((b & 0b1111) << 2));
+                    vec.push(b'=');
+                }
+                _ => (),
+            }
+
+            let s = String::from_utf8(vec).expect("should use unsafe here honestly");
+            Self(s)
+        }
     }
-}
 
-fn three_hex_to_two_base64(a: u8, b: u8, c: u8) -> Result<(u8, u8)> {
-    let a = hex_to_byte(a)?;
-    let b = hex_to_byte(b)?;
-    let c = hex_to_byte(c)?;
-    let first = (a << 2) | (b >> 2);
-    let second = ((b & 0b11) << 4) | c;
+    fn char_is_base64(cha: u8) -> bool {
+        matches!(cha, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'=')
+    }
 
-    Ok((byte_to_base64(first)?, byte_to_base64(second)?))
+    fn map_to_base64(byte: u8) -> u8 {
+        match byte {
+            0..=25 => byte + b'A',
+            26..=51 => byte - 26 + b'a',
+            52..=61 => byte - 52 + b'0',
+            // This is http-safe base64;
+            // for original use `62 => b'+', 63 => b'/',`
+            62 => b'-',
+            63 => b'_',
+            _ => unreachable!("{byte}"),
+        }
+    }
 }
