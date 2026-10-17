@@ -5,6 +5,7 @@ fn main() {
     set1::chal1();
     set1::chal2();
     set1::chal3();
+    set1::chal4();
 }
 
 mod set1 {
@@ -51,35 +52,76 @@ mod set1 {
         //
         // Although, the problem doesn't say what is xored and how.
         // I am assuming we are xoring bytes, but what if we are xoring 4-bit parts or 6-bit parts?
-        //let bad_text = |_| String::from("+++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-        let bla: Result<Vec<(usize, String)>> =
-            (0..=u8::MAX).try_fold(Vec::new(), |mut res, xor_byte| {
-                let mut vec: Vec<u8> = HexString::new(text.into())?.to_bytes();
-                vec.iter_mut().for_each(|b| *b ^= xor_byte);
-
-                let hex = HexString::from_bytes(&vec);
-                res.push((inverse_score(&hex.0), hex.0));
-
-                let base64 = Base64String::from_bytes(&vec);
-                res.push((inverse_score(&base64.0), base64.0));
-
-                if let Ok(bla) = String::from_utf8(vec) {
-                    res.push((inverse_score(&bla), bla));
-                }
-
-                Ok(res)
-            });
-        let bla = bla.unwrap();
+        let text_bytes: Vec<u8> = HexString::new(text.into()).unwrap().to_bytes();
+        let bla: Vec<_> = decrypt_for_every_byte(&text_bytes).collect();
         let min = bla
             .iter()
-            .map(|(x, _)| *x)
+            .map(|(score, _, _)| *score)
             .min()
             .expect("`bla` should not be empty");
 
         assert!(
-            bla.iter()
-                .filter(|(x, _)| min == *x)
-                .any(|(_, s)| s.trim() == "Cooking MC's like a pound of bacon")
+            bla.into_iter()
+                .filter_map(move |(score, s, _)| if min == score { Some(s) } else { None })
+                // Funny enough, there is one more string that has all-valid ASCII,
+                // but it is full of newlines and gibberish.
+                .any(|s| s.trim() == "Cooking MC's like a pound of bacon")
+        );
+    }
+
+    /// Returns `(inverse_score, decrypted_string, xor_byte)`
+    fn decrypt_for_every_byte(bytes: &[u8]) -> impl Iterator<Item = (usize, String, u8)> {
+        (0..=u8::MAX).filter_map(|xor_byte| {
+            let mut vec: Vec<u8> = bytes.to_vec();
+            vec.iter_mut().for_each(|b| *b ^= xor_byte);
+
+            String::from_utf8(vec)
+                .ok()
+                .map(move |bla| (inverse_score(&bla), bla, xor_byte))
+        })
+    }
+
+    pub fn chal4() {
+        let file = std::fs::read_to_string("./set1_challenge4_input.txt").unwrap();
+        let line_len = file.lines().count();
+        let valid: Vec<_> = file
+            .lines()
+            .fold(Vec::with_capacity(line_len * 8), |mut vec, line| {
+                let hex = HexString::new(line.into()).unwrap();
+                decrypt_for_every_byte(&hex.to_bytes())
+                    .map(|(score, s, xor_byte)| (score, s, xor_byte, hex.0.clone()))
+                    .for_each(|bla| vec.push(bla));
+                vec
+            });
+        let min = valid.iter().map(|(score, _, _, _)| *score).min().unwrap();
+
+        let min_valid: Vec<_> = valid
+            .into_iter()
+            .filter_map(|(score, s, xor_byte, original_hex)| {
+                if score == min {
+                    Some((s, xor_byte, original_hex))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        /*
+            .for_each(|(s, xor_byte, original_hex)| {
+                println!(
+                    "{s}\n\
+                    translated by this byte: {xor_byte}\n\
+                    original string: {original_hex}"
+                )
+            });
+        */
+
+        assert_eq!(
+            min_valid,
+            vec![(
+                "Now that the party is jumping\n".into(),
+                53_u8,
+                "7b5a4215415d544115415d5015455447414c155c46155f4058455c5b523f".into(),
+            )]
         );
     }
 }
