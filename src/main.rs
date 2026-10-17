@@ -69,18 +69,6 @@ mod set1 {
         );
     }
 
-    /// Returns `(inverse_score, decrypted_string, xor_byte)`
-    fn decrypt_for_every_byte(bytes: &[u8]) -> impl Iterator<Item = (usize, String, u8)> {
-        (0..=u8::MAX).filter_map(|xor_byte| {
-            let mut vec: Vec<u8> = bytes.to_vec();
-            vec.iter_mut().for_each(|b| *b ^= xor_byte);
-
-            String::from_utf8(vec)
-                .ok()
-                .map(move |bla| (inverse_score(&bla), bla, xor_byte))
-        })
-    }
-
     pub fn chal4() {
         let file = std::fs::read_to_string("./set1_challenge4_input.txt").unwrap();
         let line_len = file.lines().count();
@@ -124,6 +112,17 @@ mod set1 {
             )]
         );
     }
+
+/// Returns `(inverse_score, decrypted_string, xor_byte)`
+fn decrypt_for_every_byte(bytes: &[u8]) -> impl Iterator<Item = (usize, String, u8)> {
+    (0..=u8::MAX).filter_map(|xor_byte| {
+        let mut vec: Vec<u8> = bytes.to_vec();
+        vec.iter_mut().for_each(|b| *b ^= xor_byte);
+
+        String::from_utf8(vec)
+            .ok()
+            .map(move |bla| (inverse_score(&bla), bla, xor_byte))
+    })
 }
 
 /// Instead of scoring text, score negatively on chars other than ascii alphabetic or whitespace.
