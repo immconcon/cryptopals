@@ -4,6 +4,7 @@ use strings::{Base64String, HexString};
 fn main() {
     set1::chal1();
     set1::chal2();
+    set1::chal3();
 }
 
 mod set1 {
@@ -28,6 +29,68 @@ mod set1 {
         let back_again = hex_xor(bla, xorge.into()).unwrap();
         assert_eq!(back_again, source);
     }
+
+    pub fn chal3() {
+        // Single-byte XOR cipher
+        // The hex encoded string:
+        let text = "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736";
+        // ... has been XOR'd against a single character. Find the key, decrypt the message.
+        //
+        // You can do this by hand. But don't: write code to do it for you.
+        //
+        // How? Devise some method for "scoring" a piece of English plaintext.
+        // Character frequency is a good metric.
+        // Evaluate each output and choose the one with the best score.
+        //
+        //
+        // Okay, there are 3 ways there could be a message inside.
+        // 1. raw bytes from hex form a valid ascii text.
+        // 2. base64 string forms a coherent ascii text. Most likely.
+        // 3. hex itself contains the message; unlikely, since 6 letters + 10 numbers
+        //  will have trouble forming coherent messages, but possible; 1337 is a word after all.
+        //
+        // Although, the problem doesn't say what is xored and how.
+        // I am assuming we are xoring bytes, but what if we are xoring 4-bit parts or 6-bit parts?
+        //let bad_text = |_| String::from("+++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+        let bla: Result<Vec<(usize, String)>> =
+            (0..=u8::MAX).try_fold(Vec::new(), |mut res, xor_byte| {
+                let mut vec: Vec<u8> = HexString::new(text.into())?.to_bytes();
+                vec.iter_mut().for_each(|b| *b ^= xor_byte);
+
+                let hex = HexString::from_bytes(&vec);
+                res.push((inverse_score(&hex.0), hex.0));
+
+                let base64 = Base64String::from_bytes(&vec);
+                res.push((inverse_score(&base64.0), base64.0));
+
+                if let Ok(bla) = String::from_utf8(vec) {
+                    res.push((inverse_score(&bla), bla));
+                }
+
+                Ok(res)
+            });
+        let bla = bla.unwrap();
+        let min = bla
+            .iter()
+            .map(|(x, _)| *x)
+            .min()
+            .expect("`bla` should not be empty");
+
+        assert!(
+            bla.iter()
+                .filter(|(x, _)| min == *x)
+                .any(|(_, s)| s.trim() == "Cooking MC's like a pound of bacon")
+        );
+    }
+}
+
+/// Instead of scoring text, score negatively on chars other than ascii alphabetic or whitespace.
+fn inverse_score(s: &str) -> usize {
+    s.len()
+        - s.as_bytes()
+            .iter()
+            .filter(|b| b.is_ascii_alphabetic() || b.is_ascii_whitespace())
+            .count()
 }
 
 fn hex_xor(a: String, b: String) -> Result<String> {
