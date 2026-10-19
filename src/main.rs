@@ -7,6 +7,7 @@ fn main() {
     set1::chal3();
     set1::chal4();
     set1::chal5();
+    set1::chal6();
 }
 
 mod set1 {
@@ -129,6 +130,199 @@ mod set1 {
         let hex = HexString::from_bytes(&bytes);
         assert_eq!(hex.0, expected);
     }
+
+    pub fn chal6() {
+        let source = "this is a test";
+        let target = "wokka wokka!!!";
+        assert_eq!(37, hamming_distance(source.as_bytes(), target.as_bytes()));
+
+        let file = std::fs::read_to_string("set1_chal6.txt").unwrap();
+        let base64_str: String = file.lines().collect();
+        let bytes = Base64String::new(base64_str).unwrap().to_bytes();
+
+        /*
+        let mut normalized_diff_and_keysize: Vec<(u64, u64)> = (2..bytes.len() / 2)
+            .map(|keysize| {
+                let (a, b) = bytes[..keysize * 2].split_at(keysize);
+                let diff = hamming_distance(a, b);
+                let keysize: u64 = keysize.try_into().unwrap();
+                (diff / keysize, keysize)
+            })
+            .collect();
+        */
+        let mut normalized_diff_and_keysize: Vec<(u64, u64, u64)> = (2..bytes.len() / 4)
+            .map(|keysize| {
+                let bla = &[
+                    &bytes[..keysize],
+                    &bytes[keysize..keysize * 2],
+                    &bytes[keysize * 2..keysize * 3],
+                    &bytes[keysize * 3..keysize * 4],
+                ];
+                let sum_of_all_distances: u64 = bla
+                    .iter()
+                    .enumerate()
+                    .map(|(i, left_slice)| {
+                        bla[i..]
+                            .iter()
+                            .map(|right_slice| hamming_distance(left_slice, right_slice))
+                            .sum::<u64>()
+                    })
+                    .sum();
+
+                let keysize: u64 = keysize.try_into().unwrap();
+                (
+                    sum_of_all_distances / keysize,
+                    sum_of_all_distances % keysize,
+                    keysize,
+                )
+            })
+            .collect();
+        normalized_diff_and_keysize.sort_unstable();
+
+        // Okay, so the keysize is 29:
+        // it is the keysize with smallest diff,
+        // and all keysizes with smallest diff after that are just a multiple of 29
+        /*
+        normalized_diff_and_keysize
+            .iter()
+            .for_each(|&(diff, modulo, keysize)| {
+                println!("keysize: {keysize} diff: {diff}, modulo: {modulo}");
+            });
+        */
+        let keysize: usize = normalized_diff_and_keysize
+            .first()
+            .unwrap()
+            .2
+            .try_into()
+            .unwrap();
+
+        /*
+        try_solve_for_keysize(&bytes, keysize)
+            .into_iter()
+            .for_each(|(decrypted_str, key)| {
+                println!("{decrypted_str}");
+                print!("{}", String::from_utf8_lossy_owned(key));
+            });
+        */
+        match try_solve_for_keysize(&bytes, keysize).as_slice() {
+            [(text, key)] => {
+                assert_eq!(
+                    text.trim(),
+                    std::fs::read_to_string("set1_chal6_decrypted_text.txt")
+                        .unwrap()
+                        .trim(),
+                );
+                assert_eq!(
+                    key,
+                    std::fs::read_to_string("set1_chal6_key.txt")
+                        .unwrap()
+                        .as_bytes(),
+                );
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+fn try_solve_for_keysize(bytes: &[u8], keysize: usize) -> Vec<(String, Vec<u8>)> {
+    let max_block_len = bytes.len().div_ceil(keysize);
+    let transposed_blocks: Vec<Vec<u8>> = (0..keysize)
+        .map(|mut idx| {
+            let mut vec = Vec::with_capacity(max_block_len);
+            while idx < bytes.len() {
+                vec.push(bytes[idx]);
+                idx += keysize;
+            }
+            vec
+        })
+        .collect();
+
+    let mut rebuilt: Vec<u8> = Vec::with_capacity(bytes.len());
+    for idx in 0..max_block_len {
+        transposed_blocks.iter().for_each(|block| {
+            if let Some(x) = block.get(idx) {
+                rebuilt.push(*x);
+            }
+        });
+    }
+    assert_eq!(bytes.len(), rebuilt.len());
+    bytes.iter().zip(rebuilt.iter()).enumerate().for_each(
+        |(idx, (original_byte, rebuilt_byte))| {
+            assert_eq!(original_byte, rebuilt_byte, "at idx {idx}");
+        },
+    );
+
+    // get possible answers for every transposed chunk.
+    let min_penalty_xor_bytes: Vec<Vec<u8>> = transposed_blocks
+        .iter()
+        .map(|block| {
+            let iter = decrypt_for_every_byte(block);
+            let min = iter
+                .clone()
+                .map(|(penalty_score, _, _)| penalty_score)
+                .min()
+                .unwrap();
+            iter.filter_map(|(penalty_score, _, xor_byte)| {
+                if penalty_score == min {
+                    Some(xor_byte)
+                } else {
+                    None
+                }
+            })
+            .collect()
+        })
+        .collect();
+
+    if min_penalty_xor_bytes.iter().any(|v| v.is_empty()) {
+        return Vec::new();
+    }
+
+    // for every possible XOR byte generate a key with other possible XOR bytes.
+    let keys: Vec<Vec<u8>> = min_penalty_xor_bytes.into_iter().fold(
+        vec![Vec::new()],
+        |key_prefixes, sloice_of_xor_bytes| match *sloice_of_xor_bytes.as_slice() {
+            [byte] => {
+                let mut key_prefixes = key_prefixes;
+                key_prefixes.iter_mut().for_each(|prefix| prefix.push(byte));
+                key_prefixes
+            }
+            _ => sloice_of_xor_bytes
+                .into_iter()
+                .flat_map(|byte| {
+                    let mut key_prefixes = key_prefixes.clone();
+                    key_prefixes.iter_mut().for_each(|prefix| prefix.push(byte));
+                    key_prefixes
+                })
+                .collect(),
+        },
+    );
+
+    keys.into_iter()
+        .map(|key| {
+            let mut bytes = bytes.to_vec();
+            decrypt_with_key(&mut bytes, &key);
+            let s = String::from_utf8_lossy_owned(bytes);
+            (s, key)
+        })
+        .collect()
+}
+
+/// # Panic
+///
+/// Panics if the slices are not of the same length.
+fn hamming_distance(a: &[u8], b: &[u8]) -> u64 {
+    assert_eq!(a.len(), b.len());
+
+    a.iter().zip(b.iter()).fold(0, |differing_bits, (&a, &b)| {
+        differing_bits + u64::from((a ^ b).count_ones())
+    })
+}
+
+fn decrypt_with_key(bytes: &mut [u8], key: &[u8]) {
+    bytes
+        .iter_mut()
+        .zip(key.iter().cycle())
+        .for_each(|(encrypted_byte, key_byte)| *encrypted_byte ^= key_byte);
 }
 
 fn encrypt_with_key(msg: &mut [u8], key: &[u8]) {
