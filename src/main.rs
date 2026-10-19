@@ -8,6 +8,7 @@ fn main() {
     set1::chal4();
     set1::chal5();
     set1::chal6();
+    set1::chal7();
 }
 
 mod set1 {
@@ -221,6 +222,27 @@ mod set1 {
             }
             _ => unreachable!(),
         }
+    }
+
+    pub fn chal7() {
+        let key = "YELLOW SUBMARINE";
+
+        let file = std::fs::read_to_string("set1_chal7_input.txt").unwrap();
+        let base64 = Base64String::new(file.lines().collect()).unwrap();
+        let bytes = base64.to_bytes();
+
+        let decrypted = openssl::symm::decrypt(
+            openssl::symm::Cipher::aes_128_ecb(),
+            key.as_bytes(),
+            None,
+            &bytes,
+        )
+        .unwrap();
+
+        assert_eq!(
+            decrypted,
+            std::fs::read("set1_chal7_decrypted_text.txt").unwrap()
+        );
     }
 }
 
