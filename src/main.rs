@@ -63,7 +63,11 @@ mod set1 {
 
         assert!(
             bla.into_iter()
-                .filter_map(move |(score, s, _)| if min == score { Some(s) } else { None })
+                .filter_map(move |(score, s, _)| if min == score {
+                    String::from_utf8(s).ok()
+                } else {
+                    None
+                })
                 // Funny enough, there is one more string that has all-valid ASCII,
                 // but it is full of newlines and gibberish.
                 .any(|s| s.trim() == "Cooking MC's like a pound of bacon")
@@ -133,23 +137,27 @@ fn encrypt_with_key(msg: &mut [u8], key: &[u8]) {
         .for_each(|(msg_byte, &key_byte)| *msg_byte ^= key_byte);
 }
 
-/// Returns `(inverse_score, decrypted_string, xor_byte)`
-fn decrypt_for_every_byte(bytes: &[u8]) -> impl Iterator<Item = (usize, String, u8)> {
-    (0..=u8::MAX).filter_map(|xor_byte| {
+/// Returns `(penalty_score, decrypted_bytes, xor_byte)`
+fn decrypt_for_every_byte(bytes: &[u8]) -> impl Iterator<Item = (usize, Vec<u8>, u8)> + Clone {
+    (0..=u8::MAX).map(|xor_byte| {
         let mut vec: Vec<u8> = bytes.to_vec();
         vec.iter_mut().for_each(|b| *b ^= xor_byte);
 
-        String::from_utf8(vec)
-            .ok()
-            .map(move |bla| (inverse_score(&bla), bla, xor_byte))
+        (penalty_score(&vec), vec, xor_byte)
     })
 }
 
-/// Instead of scoring text, score negatively on chars other than ascii alphabetic or whitespace.
-fn inverse_score(s: &str) -> usize {
+/// Instead of scoring text, score negatively on bad chars.
+fn penalty_score(s: &[u8]) -> usize {
     s.len()
-        - s.as_bytes()
-            .iter()
+        - s.iter()
+            //x FIXME: this is kinda bad for general case;
+            //x languages other than English get very high penalty
+            //x it works for the toy challenge but I'd like a better way for real use cases.
+            //x
+            //x Maybe it's fine, but use tables per language?
+            //x trying to match general utf8 or utf16 is ugly,
+            //x although `ascii_whitespace` is probably good at reducing penalty in all languages.
             .filter(|b| b.is_ascii_alphabetic() || b.is_ascii_whitespace())
             .count()
 }
@@ -234,8 +242,12 @@ mod strings {
     pub struct Base64String(pub String);
 
     impl Base64String {
-        pub fn new(s: String) -> Result<Self> {
-            if s.len().is_multiple_of(4) && s.as_bytes().iter().copied().all(char_is_base64) {
+        pub fn new(mut s: String) -> Result<Self> {
+            while s.ends_with('=') {
+                s.pop();
+            }
+
+            if s.as_bytes().iter().copied().all(char_is_base64) {
                 Ok(Self(s))
             } else {
                 bail!("It is not a base64 string: {s}")
@@ -243,7 +255,50 @@ mod strings {
         }
 
         pub fn to_bytes(&self) -> Vec<u8> {
-            todo!()
+            let (chunks, pad) = self.0.as_bytes().as_chunks::<4>();
+            let mut vec: Vec<u8> = chunks
+                .iter()
+                .flat_map(|chunk| {
+                    let &[a, b, c, d] = chunk;
+                    let (a, b, c, d) = (
+                        base64_to_byte(a),
+                        base64_to_byte(b),
+                        base64_to_byte(c),
+                        base64_to_byte(d),
+                    );
+
+                    let byte_a = a << 2 | b >> 4;
+                    let byte_b = b << 4 | c >> 2;
+                    let byte_c = c << 6 | d;
+                    [byte_a, byte_b, byte_c].into_iter()
+                })
+                .collect();
+            match *pad {
+                [a] => {
+                    let a = base64_to_byte(a);
+                    let byte_a = a << 2;
+                    vec.push(byte_a);
+                }
+                [a, b] => {
+                    let (a, b) = (base64_to_byte(a), base64_to_byte(b));
+                    let byte_a = a << 2 | b >> 4;
+                    let byte_b = b << 4;
+                    vec.push(byte_a);
+                    vec.push(byte_b);
+                }
+                [a, b, c] => {
+                    let (a, b, c) = (base64_to_byte(a), base64_to_byte(b), base64_to_byte(c));
+                    let byte_a = a << 2 | b >> 4;
+                    let byte_b = b << 4 | c >> 2;
+                    let byte_c = c << 6;
+                    vec.push(byte_a);
+                    vec.push(byte_b);
+                    vec.push(byte_c);
+                }
+                _ => (),
+            }
+
+            vec
         }
 
         pub fn from_bytes(bytes: &[u8]) -> Self {
@@ -285,8 +340,20 @@ mod strings {
         }
     }
 
+    fn base64_to_byte(base64: u8) -> u8 {
+        match base64 {
+            b'A'..=b'Z' => base64 - b'A',
+            b'a'..=b'z' => 26 + base64 - b'a',
+            b'0'..=b'9' => 52 + base64 - b'0',
+            b'+' => 62,
+            b'/' => 63,
+            _ => unreachable!("{base64}"),
+        }
+    }
+
     fn char_is_base64(cha: u8) -> bool {
-        matches!(cha, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'=')
+        matches!(cha, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'+' | b'/' | b'=')
+        // matches!(cha, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'=')
     }
 
     fn map_to_base64(byte: u8) -> u8 {
@@ -294,10 +361,11 @@ mod strings {
             0..=25 => byte + b'A',
             26..=51 => byte - 26 + b'a',
             52..=61 => byte - 52 + b'0',
-            // This is http-safe base64;
-            // for original use `62 => b'+', 63 => b'/',`
-            62 => b'-',
-            63 => b'_',
+            62 => b'+',
+            63 => b'/',
+            // to use http-safe base64;
+            // 62 => b'-',
+            // 63 => b'_',
             _ => unreachable!("{byte}"),
         }
     }
