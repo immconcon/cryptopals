@@ -77,7 +77,7 @@ mod set1 {
     }
 
     pub fn chal4() {
-        let file = std::fs::read_to_string("./set1_challenge4_input.txt").unwrap();
+        let file = std::fs::read_to_string("./set1_chal4_input.txt").unwrap();
         let line_len = file.lines().count();
         let valid: Vec<_> = file
             .lines()
