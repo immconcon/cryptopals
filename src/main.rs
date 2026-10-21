@@ -9,6 +9,7 @@ fn main() {
     set1::chal5();
     set1::chal6();
     set1::chal7();
+    set1::chal8();
 }
 
 mod set1 {
@@ -243,6 +244,65 @@ mod set1 {
             decrypted,
             std::fs::read("set1_chal7_decrypted_text.txt").unwrap()
         );
+    }
+
+    pub fn chal8() {
+        let file = std::fs::read_to_string("set1_chal8_input.txt").unwrap();
+        /*
+        file.lines().enumerate().for_each(|(line_idx, line)| {
+            use std::{collections::HashSet, ops::Not};
+
+            let hex = HexString::new(line.into()).unwrap();
+            let bytes = hex.to_bytes();
+            // What am I actually supposed to do with bytes?
+            // "
+            // Remember that the problem with ECB is that it is stateless and deterministic;
+            // the same 16 byte plaintext block will always produce the same 16 byte ciphertext.
+            // "
+            //
+            // Okay, cool, we have 16 byte blocks. And most likely ASCII text.
+            // It doesn't necessarily mean it's just rot13 with `13` randomized
+            // or something like that, right?
+            //
+            // There are 10 blocks in every line.
+            // I guess I am supposed to search for the blocks that are equal to eachother?
+            // Eh, doesn't feel great, but it is better than nothing I guess.
+            let (chunks, padding) = bytes.as_chunks::<16>();
+            assert_eq!(padding, &[]);
+
+            let mut set: HashSet<&[u8; 16]> = HashSet::new();
+            let got_repeat =
+                chunks
+                    .iter()
+                    .enumerate()
+                    .fold(false, |got_repeat, (chunk_idx, chunk)| {
+                        if set.insert(chunk).not() {
+                            let start_in_line = chunk_idx * 32;
+                            println!(
+                                "16-byte chunk is repeated: {}",
+                                &line[start_in_line..start_in_line + 32]
+                            );
+
+                            true
+                        } else {
+                            got_repeat
+                        }
+                    });
+
+            if got_repeat {
+                println!("line {line_idx} appears to be encrypted with ECB; line content:");
+                println!("{line}");
+            }
+        });
+        */
+
+        let ecb_string = "d880619740a8a19b7840a8a31c810a3d08649af70dc06f4fd5d2d69c744cd283e2dd052f6b641dbf9d11b0348542bb5708649af70dc06f4fd5d2d69c744cd2839475c9dfdbc1d46597949d9c7e82bf5a08649af70dc06f4fd5d2d69c744cd28397a93eab8d6aecd566489154789a6b0308649af70dc06f4fd5d2d69c744cd283d403180c98c8f6db1f2a3f9c4040deb0ab51b29933f2c123c58386b06fba186a";
+        assert_eq!(file.lines().nth(132).unwrap(), ecb_string);
+        let repeating_chunk = "08649af70dc06f4fd5d2d69c744cd283";
+        assert_eq!(&ecb_string[32..64], repeating_chunk);
+        assert_eq!(&ecb_string[96..128], repeating_chunk);
+        assert_eq!(&ecb_string[160..192], repeating_chunk);
+        assert_eq!(&ecb_string[224..256], repeating_chunk);
     }
 }
 
