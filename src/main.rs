@@ -14,7 +14,10 @@ fn main() {
 }
 
 mod set1 {
-    use super::*;
+    use super::{
+        Base64String, HexString, decrypt_for_every_byte, encrypt_with_key, hamming_distance,
+        hex_xor, strings, try_solve_for_keysize,
+    };
 
     pub fn chal1() {
         const SOURCE: &str = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d";
