@@ -295,7 +295,7 @@ fn try_solve_for_keysize(bytes: &[u8], keysize: usize) -> Vec<(String, Vec<u8>)>
         })
         .collect();
 
-    if min_penalty_xor_bytes.iter().any(|v| v.is_empty()) {
+    if min_penalty_xor_bytes.iter().any(Vec::is_empty) {
         return Vec::new();
     }
 
