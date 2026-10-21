@@ -10,6 +10,7 @@ fn main() {
     set1::chal6();
     set1::chal7();
     set1::chal8();
+    set2::chal9();
 }
 
 mod set1 {
@@ -304,6 +305,42 @@ mod set1 {
         assert_eq!(&ecb_string[160..192], repeating_chunk);
         assert_eq!(&ecb_string[224..256], repeating_chunk);
     }
+}
+
+mod set2 {
+    use super::*;
+
+    pub fn chal9() {
+        // I guess this is gonna be just a bunch of tests for padding function implementation?
+        // Sure, whatever.
+        assert_eq!(
+            pkcs_7(b"YELLOW SUBMARINE", 20),
+            b"YELLOW SUBMARINE\x04\x04\x04\x04"
+        );
+        assert_eq!(pkcs_7(b"bla", 4), b"bla\x01");
+        assert_eq!(pkcs_7(b"fun", 3), b"fun\x03\x03\x03");
+        assert_eq!(
+            pkcs_7(b"qwerasdfzxcv1234", 16),
+            b"qwerasdfzxcv1234\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10"
+        );
+    }
+}
+
+fn pkcs_7(bytes: &[u8], block_size: u8) -> Vec<u8> {
+    let block_size_usize = usize::from(block_size);
+    let required_padding = block_size_usize - (bytes.len() % block_size_usize);
+    let required_padding =
+        u8::try_from(required_padding).expect("`B - (L mod B)` is always at most B");
+
+    let total_len = bytes.len() + usize::from(required_padding);
+    let mut padded = Vec::with_capacity(total_len);
+    padded.extend_from_slice(bytes);
+    padded.extend(std::iter::repeat_n(
+        required_padding,
+        usize::from(required_padding),
+    ));
+
+    padded
 }
 
 fn try_solve_for_keysize(bytes: &[u8], keysize: usize) -> Vec<(String, Vec<u8>)> {
