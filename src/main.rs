@@ -11,6 +11,7 @@ fn main() {
     set1::chal7();
     set1::chal8();
     set2::chal9();
+    set2::chal10();
 }
 
 mod set1 {
@@ -322,6 +323,50 @@ mod set2 {
         );
     }
 
+    pub fn chal10() {
+        let key = b"YELLOW SUBMARINE";
+
+        let file = std::fs::read_to_string("set2_chal10_input.txt").unwrap();
+        let base64 = Base64String::new(file.lines().collect()).unwrap();
+        let bytes = base64.to_bytes();
+        let (chunks, tail) = bytes.as_chunks();
+        assert_eq!(tail, []);
+
+        let prev_encrypted_block = &mut [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let decrypted_bytes = aes_128_cbc_decrypt(key, prev_encrypted_block, chunks);
+
+        assert_eq!(
+            decrypted_bytes,
+            std::fs::read_to_string("set2_chal10_output.txt")
+                .unwrap()
+                .trim()
+                .as_bytes()
+        );
+    }
+}
+
+fn aes_128_cbc_encrypt(key: &[u8], iv: &mut [u8; 16], bytes: &[u8]) -> Vec<u8> {
+    let mut bytes = pkcs_7(bytes, 16);
+
+    todo!()
+}
+
+fn aes_128_cbc_decrypt(key: &[u8; 16], iv: &mut [u8; 16], chunks: &[[u8; 16]]) -> Vec<u8> {
+    let mut output = vec![0_u8; chunks.len() * 16];
+    let (output_chunks, tail) = output.as_chunks_mut();
+    assert_eq!(tail, []);
+
+    let prev_encrypted_block = iv;
+    output_chunks
+        .iter_mut()
+        .zip(chunks.iter())
+        .for_each(|(out_chunk, in_chunk)| {
+            aes_128_ecb_one_block_decrypt(key, in_chunk, out_chunk);
+            bytes_xor(out_chunk, prev_encrypted_block);
+            *prev_encrypted_block = *in_chunk;
+        });
+
+    output
 }
 
 fn aes_128_ecb_encrypt(key: &[u8], bytes: &[u8]) -> Vec<u8> {
@@ -347,6 +392,34 @@ fn aes_128_ecb_decrypt(key: &[u8], input: &[u8]) -> Vec<u8> {
     let rest = crypter.finalize(&mut output[written..]).unwrap();
     output.truncate(written + rest);
     output
+}
+
+fn aes_128_ecb_one_block_encrypt(key: &[u8; 16], input: &[u8; 16], output: &mut [u8; 16]) {
+    let mut crypter = openssl::symm::Crypter::new(
+        openssl::symm::Cipher::aes_128_ecb(),
+        openssl::symm::Mode::Encrypt,
+        key,
+        None,
+    )
+    .unwrap();
+    crypter.pad(false);
+    // SAFETY: removed `pad` from crypter, and we have output.len() = input.len()
+    let written = unsafe { crypter.update_unchecked(input, output).unwrap() };
+    assert_eq!(written, 16);
+}
+
+fn aes_128_ecb_one_block_decrypt(key: &[u8; 16], input: &[u8; 16], output: &mut [u8; 16]) {
+    let mut crypter = openssl::symm::Crypter::new(
+        openssl::symm::Cipher::aes_128_ecb(),
+        openssl::symm::Mode::Decrypt,
+        key,
+        None,
+    )
+    .unwrap();
+    crypter.pad(false);
+    // SAFETY: removed `pad` from crypter, and we have output.len() = input.len()
+    let written = unsafe { crypter.update_unchecked(input, output).unwrap() };
+    assert_eq!(written, 16);
 }
 
 fn pkcs_7(bytes: &[u8], block_size: u8) -> Vec<u8> {
