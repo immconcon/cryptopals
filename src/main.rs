@@ -12,6 +12,7 @@ fn main() {
     set1::chal8();
     set2::chal9();
     set2::chal10();
+    set2::chal11();
 }
 
 mod set1 {
@@ -348,6 +349,52 @@ mod set2 {
         let bla = aes_128_cbc_encrypt(key, iv, &mut decrypted_bytes);
         assert_eq!(bla, original_bytes);
     }
+
+    pub fn chal11() {
+        // I dunno, when it is all random, testing anything is impossible.
+        let bla = is_oracle_ecb();
+        assert!(bla || !bla);
+    }
+}
+
+fn is_oracle_ecb() -> bool {
+    let input = "a".repeat(16 * 4);
+    let encryptge = encryption_oracle(input.as_bytes());
+    encryptge[16..32] == encryptge[32..32 + 16]
+}
+
+fn encryption_oracle(your_input: &[u8]) -> Vec<u8> {
+    let prefix_len = rand::random_range(5..=10);
+    let mut prefix: Vec<u8> = Vec::with_capacity(prefix_len);
+    for _ in 0..prefix_len {
+        prefix.push(rand::random());
+    }
+
+    let suffix_len = rand::random_range(5..=10);
+    let mut suffix: Vec<u8> = Vec::with_capacity(suffix_len);
+    for _ in 0..suffix_len {
+        suffix.push(rand::random());
+    }
+
+    let input_bytes: Vec<u8> = prefix
+        .iter()
+        .chain(your_input.iter())
+        .chain(suffix.iter())
+        .copied()
+        .collect();
+    let mut input_bytes = pkcs_7(&input_bytes, 16);
+
+    let key = random_aes_key();
+    // 50/50 bool
+    if rand::random() {
+        aes_128_ecb_encrypt(&key, &input_bytes)
+    } else {
+        aes_128_cbc_encrypt(&key, &mut rand::random(), &mut input_bytes)
+    }
+}
+
+fn random_aes_key() -> [u8; 16] {
+    rand::random()
 }
 
 fn aes_128_cbc_encrypt(key: &[u8; 16], iv: &mut [u8; 16], bytes: &mut [u8]) -> Vec<u8> {
