@@ -437,7 +437,6 @@ fn aes_128_cbc_decrypt(key: &[u8; 16], iv: &mut [u8; 16], chunks: &[[u8; 16]]) -
     output
 }
 
-#[expect(dead_code)]
 fn aes_128_ecb_encrypt(key: &[u8], bytes: &[u8]) -> Vec<u8> {
     let cipher = openssl::symm::Cipher::aes_128_ecb();
     let mut crypter =
