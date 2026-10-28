@@ -328,8 +328,8 @@ mod set2 {
 
         let file = std::fs::read_to_string("set2_chal10_input.txt").unwrap();
         let base64 = Base64String::new(file.lines().collect()).unwrap();
-        let bytes = base64.to_bytes();
-        let (chunks, tail) = bytes.as_chunks();
+        let original_bytes = base64.to_bytes();
+        let (chunks, tail) = original_bytes.as_chunks();
         assert_eq!(tail, []);
 
         let prev_encrypted_block = &mut [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -342,13 +342,34 @@ mod set2 {
                 .trim()
                 .as_bytes()
         );
+
+        let iv = &mut [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut decrypted_bytes = decrypted_bytes;
+        let bla = aes_128_cbc_encrypt(key, iv, &mut decrypted_bytes);
+        assert_eq!(bla, original_bytes);
     }
 }
 
-fn aes_128_cbc_encrypt(key: &[u8], iv: &mut [u8; 16], bytes: &[u8]) -> Vec<u8> {
-    let mut bytes = pkcs_7(bytes, 16);
+fn aes_128_cbc_encrypt(key: &[u8; 16], iv: &mut [u8; 16], bytes: &mut [u8]) -> Vec<u8> {
+    assert!(bytes.len().is_multiple_of(16));
+    //let mut bytes = pkcs_7(bytes, 16);
+    let mut output = vec![0_u8; bytes.len()];
+    let (input_chunks, tail) = bytes.as_chunks_mut();
+    assert_eq!(tail, []);
+    let (output_chunks, tail) = output.as_chunks_mut();
+    assert_eq!(tail, []);
 
-    todo!()
+    let prev_encrypted_block = iv;
+    output_chunks
+        .iter_mut()
+        .zip(input_chunks.iter_mut())
+        .for_each(|(out_chunk, in_chunk)| {
+            bytes_xor(in_chunk, prev_encrypted_block);
+            aes_128_ecb_one_block_encrypt(key, in_chunk, out_chunk);
+            *prev_encrypted_block = *out_chunk;
+        });
+
+    output
 }
 
 fn aes_128_cbc_decrypt(key: &[u8; 16], iv: &mut [u8; 16], chunks: &[[u8; 16]]) -> Vec<u8> {
@@ -369,6 +390,7 @@ fn aes_128_cbc_decrypt(key: &[u8; 16], iv: &mut [u8; 16], chunks: &[[u8; 16]]) -
     output
 }
 
+#[expect(dead_code)]
 fn aes_128_ecb_encrypt(key: &[u8], bytes: &[u8]) -> Vec<u8> {
     let cipher = openssl::symm::Cipher::aes_128_ecb();
     let mut crypter =
