@@ -15,8 +15,8 @@ fn main() {
 
 mod set1 {
     use super::{
-        Base64String, HexString, decrypt_for_every_byte, encrypt_with_key, hamming_distance,
-        hex_xor, strings, try_solve_for_keysize,
+        Base64String, HexString, aes_128_ecb_decrypt, decrypt_for_every_byte, encrypt_with_key,
+        hamming_distance, hex_xor, strings, try_solve_for_keysize,
     };
 
     pub fn chal1() {
@@ -230,19 +230,13 @@ mod set1 {
     }
 
     pub fn chal7() {
-        let key = "YELLOW SUBMARINE";
+        let key = b"YELLOW SUBMARINE";
 
         let file = std::fs::read_to_string("set1_chal7_input.txt").unwrap();
         let base64 = Base64String::new(file.lines().collect()).unwrap();
         let bytes = base64.to_bytes();
 
-        let decrypted = openssl::symm::decrypt(
-            openssl::symm::Cipher::aes_128_ecb(),
-            key.as_bytes(),
-            None,
-            &bytes,
-        )
-        .unwrap();
+        let decrypted = aes_128_ecb_decrypt(key, &bytes);
 
         assert_eq!(
             decrypted,
@@ -327,6 +321,32 @@ mod set2 {
             b"qwerasdfzxcv1234\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10"
         );
     }
+
+}
+
+fn aes_128_ecb_encrypt(key: &[u8], bytes: &[u8]) -> Vec<u8> {
+    let cipher = openssl::symm::Cipher::aes_128_ecb();
+    let mut crypter =
+        openssl::symm::Crypter::new(cipher, openssl::symm::Mode::Encrypt, key, None).unwrap();
+
+    let mut output = vec![0; bytes.len() + cipher.block_size()];
+    let count = crypter.update(bytes, &mut output).unwrap();
+    let rest = crypter.finalize(&mut output[count..]).unwrap();
+    output.truncate(count + rest);
+
+    output
+}
+
+fn aes_128_ecb_decrypt(key: &[u8], input: &[u8]) -> Vec<u8> {
+    let cipher = openssl::symm::Cipher::aes_128_ecb();
+    let mut crypter =
+        openssl::symm::Crypter::new(cipher, openssl::symm::Mode::Decrypt, key, None).unwrap();
+
+    let mut output = vec![0; input.len() + cipher.block_size()];
+    let written = crypter.update(input, &mut output).unwrap();
+    let rest = crypter.finalize(&mut output[written..]).unwrap();
+    output.truncate(written + rest);
+    output
 }
 
 fn pkcs_7(bytes: &[u8], block_size: u8) -> Vec<u8> {
@@ -486,12 +506,16 @@ fn hex_xor(a: String, b: String) -> Result<String> {
     let mut a_bytes = HexString::new(a)?.to_bytes();
     let b_bytes = HexString::new(b)?.to_bytes();
 
-    a_bytes
-        .iter_mut()
-        .zip(b_bytes.iter())
-        .for_each(|(a, &b)| *a ^= b);
+    bytes_xor(&mut a_bytes, &b_bytes);
 
     Ok(HexString::from_bytes(&a_bytes).0)
+}
+
+fn bytes_xor(this: &mut [u8], rhs: &[u8]) {
+    assert_eq!(rhs.len(), this.len());
+    this.iter_mut()
+        .zip(rhs.iter())
+        .for_each(|(out_byte, &in_byte)| *out_byte ^= in_byte);
 }
 
 mod strings {
